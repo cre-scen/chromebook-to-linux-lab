@@ -1,55 +1,91 @@
 # Chromebook to Linux Lab Box
 
-Turning an end-of-life HP Chromebook into a hardened Xubuntu machine that I use as a **lab target** in my home security lab (see [homelab](https://github.com/cre-scen/homelab)).
+![Xubuntu](https://img.shields.io/badge/Xubuntu-26.04.1_LTS-0044AA?logo=xubuntu&logoColor=white)
+![Firmware](https://img.shields.io/badge/Firmware-MrChromebox_UEFI-informational)
+![SSH](https://img.shields.io/badge/SSH-key--only-success)
 
-## Why
+I repurposed an end-of-life HP Chromebook as a hardened Xubuntu machine. It now serves as the **target host** in my [home security lab](https://github.com/cre-scen/homelab).
 
-ChromeOS security updates for this device ended in **July 2026**. An unpatched machine shouldn't be used for daily work. With full Linux it becomes a useful, isolated test box.
+## Background
+
+ChromeOS security updates for this device ended in **July 2026**. An unpatched device shouldn't be used for everyday work. But with UEFI firmware and a current Linux distribution, the hardware is still useful as an isolated, disposable lab target.
 
 ## Hardware
 
-| Item | Value |
+| Component | Specification |
 | :--- | :--- |
 | Model | HP Chromebook 14 (db0xxx) |
 | Board | CAREENA (AMD Stoney Ridge) |
 | CPU / GPU | AMD A4-9120C / Radeon R4 |
-| RAM / Storage | 4 GB / 32 GB eMMC |
+| Memory / Storage | 4 GB RAM / 32 GB eMMC |
 
-## Summary of steps
+## Process
 
-1. **Checked support.** Confirmed on the [MrChromebox supported devices](https://docs.mrchromebox.tech/docs/supported-devices.html) page that CAREENA supports the **UEFI Full ROM**, and read the board's WP Method directly from the table: **CR50 (battery)**.
-2. **Enabled Developer Mode** and confirmed write protect was on (`1`).
-3. **Disabled hardware write protect** by opening the case and disconnecting the battery, then booting on AC power only. Write protect then read `0`.
-4. **Backed up the stock firmware** (16 MB `.rom`) to USB and copied it to a second machine. The script won't restore stock firmware on devices past their update-expiry date, so this backup is the only way back.
-5. **Flashed the MrChromebox UEFI Full ROM** from the VT2 shell as `chronos`:
-   ```bash
-   cd; curl -LOf https://mrchromebox.tech/firmware-util.sh && sudo bash firmware-util.sh
-   ```
-   Ran **Backup** first, then **Install/Update UEFI Full ROM**.
-6. **Installed Xubuntu 26.04.1 LTS** from a SHA256-verified ISO written with Rufus. Erased the internal eMMC, no encryption. Wi-Fi (ath10k), graphics (amdgpu), touchpad and sound all worked out of the box.
-7. **Hardened remote access:**
-   - Enabled the `ufw` firewall and allowed only SSH
-   - Installed OpenSSH server and set up **ed25519 key auth** (with a passphrase)
-   - **Disabled password authentication**:
-     ```
-     # /etc/ssh/sshd_config.d/  (drop-in)
-     PasswordAuthentication no
-     ```
-8. **Installed Docker** (`docker.io`) to run vulnerable apps for practice. These are bound to localhost only.
+### 1. Assess compatibility
 
-## What went wrong (and what I learned)
+I checked the [MrChromebox supported-devices table](https://docs.mrchromebox.tech/docs/supported-devices.html) for the board. It confirmed **UEFI Full ROM** support and a write-protect method of **CR50 (battery)**. An older community wiki listed only RW_LEGACY support for this platform, which is why I used the current primary source instead.
 
-- **Broken keyboard connector.** The locking latch on the keyboard ribbon connector (J9) came off while I was opening the case, so the built-in keyboard no longer works. I use a USB keyboard. Lesson: lift ZIF latches with a spudger, never pull the ribbon.
-- **Don't trust old wikis.** An older community wiki said this platform only had RW_LEGACY support. The current MrChromebox table said otherwise. Always check the primary source.
-- **Verify everything before an irreversible step.** That meant a firmware backup in two places, an ISO hash check, and confirming the target disk before erasing.
+### 2. Disable firmware write protection
+
+- Enabled Developer Mode and confirmed write protect was enabled (`1`).
+- Opened the chassis and disconnected the internal battery, then booted on AC power alone. Write protect then read `0`.
+
+### 3. Back up the stock firmware
+
+I saved the 16 MB stock firmware image to USB and copied it to a second machine. The flashing utility refuses to restore stock firmware on devices past their update-expiry date, so this backup is the only recovery path.
+
+### 4. Flash UEFI firmware
+
+From the ChromeOS VT2 shell, as the `chronos` user:
+
+```bash
+cd; curl -LOf https://mrchromebox.tech/firmware-util.sh && sudo bash firmware-util.sh
+```
+
+I ran **Backup Current Firmware** first, verified the file, then ran **Install/Update UEFI (Full ROM) Firmware**.
+
+### 5. Install Linux
+
+- Downloaded **Xubuntu 26.04.1 LTS**, verified its SHA256 checksum and wrote it to USB with Rufus.
+- Installed to the internal eMMC (whole disk).
+- Wi-Fi (`ath10k`), graphics (`amdgpu`), touchpad and audio all worked without extra drivers.
+
+### 6. Harden remote access
+
+| Control | Implementation |
+| :--- | :--- |
+| Host firewall | `ufw` enabled, inbound limited to SSH |
+| Authentication | OpenSSH with **ed25519** keys, passphrase-protected |
+| Password login | Disabled (`PasswordAuthentication no`) |
+
+### 7. Prepare as a lab target
+
+I installed Docker (`docker.io`) to run intentionally vulnerable applications. They bind to `127.0.0.1` only and are reached through SSH tunnels. See [homelab](https://github.com/cre-scen/homelab).
+
+## Challenges and lessons learned
+
+| Challenge | Outcome / lesson |
+| :--- | :--- |
+| The keyboard ribbon connector's locking latch (J9) came off during disassembly | The built-in keyboard is out of service and I use a USB keyboard. Lesson: release ZIF latches with a spudger before handling ribbons. |
+| Conflicting compatibility information online | Verify against the maintainer's current documentation, not secondary wikis. |
+| Several irreversible steps (firmware flash, disk erase) | Verify before each one: a firmware backup in two locations, a checksum-verified ISO and a confirmed target disk. |
+
+## Skills demonstrated
+
+- Hardware disassembly and firmware write-protect bypass on owned hardware
+- Firmware backup, recovery planning and UEFI flashing
+- Linux installation, hardware driver validation and post-install hardening
+- SSH key management and host firewall configuration
+- Risk management for irreversible operations
 
 ## Status
 
-- [x] UEFI firmware flashed
-- [x] Xubuntu installed and updated
-- [x] SSH key-only access, firewall enabled
-- [ ] DHCP reservation on the home router
-- [ ] Vulnerable lab apps running (see homelab)
-- [ ] Repair keyboard connector (optional)
+| Item | State |
+| :--- | :--- |
+| UEFI firmware | Complete |
+| Xubuntu install and updates | Complete |
+| SSH hardening and firewall | Complete |
+| Docker lab services | In progress |
+| DHCP reservation | Planned |
 
-<!-- TODO: add screenshots: write-protect status, firmware script menu, backup file, neofetch/fastfetch on Xubuntu -->
+<!-- TODO before public: add screenshots (write-protect status, firmware utility menu, backup file listing, fastfetch on Xubuntu) to an images/ folder and link them in the relevant steps -->
