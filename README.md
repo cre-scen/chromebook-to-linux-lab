@@ -56,11 +56,11 @@ I ran **Backup Current Firmware** first, verified the file, then ran **Install/U
 
 | Control | Implementation |
 | :--- | :--- |
-| Host firewall | `ufw`, default deny inbound; SSH allowed only from the two home LAN subnets |
+| Host firewall | `ufw`, default deny inbound; SSH allowed only from the admin laptop (`192.168.0.101`, reserved in the router). Since [SecureVault_Suite](https://github.com/cre-scen/SecureVault_Suite) M3b, the lab API (`5000/tcp`) is also allowed from `192.168.0.0/24`, and a separate nftables table drops IPs that LogSentinel bans ([evidence](https://github.com/cre-scen/SecureVault_Suite/blob/main/docs/m3b-firewall-evidence.md)) |
 | Authentication | OpenSSH with **ed25519** keys only; the private key is passphrase-protected |
 | Password login | Disabled (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`). A forced password attempt gets `Permission denied (publickey)` |
 | Root login | Disabled (`PermitRootLogin no`, in a drop-in under `sshd_config.d/`) |
-| Unneeded services | CUPS (printing) stopped and masked. Only SSH listens beyond localhost |
+| Unneeded services | CUPS (printing) stopped and masked. Only SSH listens beyond localhost, plus the SecureVault API while it runs |
 
 ### 7. Prepare as a lab target
 
@@ -74,7 +74,7 @@ On the box:
 sudo bash scripts/verify-hardening.sh
 ```
 
-It is read-only and changes nothing. It checks the firmware, the SSH settings, the firewall rules, what is listening on the network and CUPS, and exits non-zero if anything has drifted. Override the allowed networks with `sudo ALLOWED_NETS="10.0.0.0/24" bash scripts/verify-hardening.sh`.
+It is read-only and changes nothing. It checks the firmware, the SSH settings, the firewall rules, what is listening on the network and CUPS, and exits non-zero if anything has drifted. Override who may connect with `SSH_SOURCES`, `API_SOURCES` and `API_PORT`, e.g. `sudo SSH_SOURCES="10.0.0.5" bash scripts/verify-hardening.sh`. Use `API_PORT=""` if the SecureVault API isn't deployed.
 
 ## Challenges and lessons learned
 
