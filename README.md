@@ -3,8 +3,11 @@
 ![Xubuntu](https://img.shields.io/badge/Xubuntu-26.04.1_LTS-0044AA?logo=xubuntu&logoColor=white)
 ![Firmware](https://img.shields.io/badge/Firmware-MrChromebox_UEFI-informational)
 ![SSH](https://img.shields.io/badge/SSH-key--only-success)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 I repurposed an end-of-life HP Chromebook as a hardened Xubuntu machine. It now serves as the **target host** in my [home security lab](https://github.com/cre-scen/homelab).
+
+Every claim below is backed by real command output in **[docs/evidence.md](docs/evidence.md)**, and can be re-checked on the box with [`scripts/verify-hardening.sh`](scripts/verify-hardening.sh).
 
 ## Background
 
@@ -14,10 +17,9 @@ ChromeOS security updates for this device ended in **July 2026**. An unpatched d
 
 | Component | Specification |
 | :--- | :--- |
-| Model | HP Chromebook 14 (db0xxx) |
-| Board | CAREENA (AMD Stoney Ridge) |
+| Model | HP Chromebook 14 (db0xxx), board CAREENA (AMD Stoney Ridge) |
 | CPU / GPU | AMD A4-9120C / Radeon R4 |
-| Memory / Storage | 4 GB RAM / 32 GB eMMC |
+| Memory / Storage | 4 GB RAM (3.7 GiB usable) / 32 GB eMMC (29.1 GiB) |
 
 ## Process
 
@@ -42,7 +44,7 @@ From the ChromeOS VT2 shell, as the `chronos` user:
 cd; curl -LOf https://mrchromebox.tech/firmware-util.sh && sudo bash firmware-util.sh
 ```
 
-I ran **Backup Current Firmware** first, verified the file, then ran **Install/Update UEFI (Full ROM) Firmware**.
+I ran **Backup Current Firmware** first, verified the file, then ran **Install/Update UEFI (Full ROM) Firmware**. The box now reports `coreboot` / `MrChromebox-2609.2` as its firmware.
 
 ### 5. Install Linux
 
@@ -54,13 +56,25 @@ I ran **Backup Current Firmware** first, verified the file, then ran **Install/U
 
 | Control | Implementation |
 | :--- | :--- |
-| Host firewall | `ufw` enabled, inbound limited to SSH |
-| Authentication | OpenSSH with **ed25519** keys, passphrase-protected |
-| Password login | Disabled (`PasswordAuthentication no`) |
+| Host firewall | `ufw`, default deny inbound; SSH allowed only from the two home LAN subnets |
+| Authentication | OpenSSH with **ed25519** keys only |
+| Password login | Disabled (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`). A forced password attempt gets `Permission denied (publickey)` |
+| Root login | Disabled (`PermitRootLogin no`, in a drop-in under `sshd_config.d/`) |
+| Unneeded services | CUPS (printing) stopped and masked. Only SSH listens beyond localhost |
 
 ### 7. Prepare as a lab target
 
-I installed Docker (`docker.io`) to run intentionally vulnerable applications. They bind to `127.0.0.1` only and are reached through SSH tunnels. See [homelab](https://github.com/cre-scen/homelab).
+I installed Docker (`docker.io`) to run intentionally vulnerable applications. They bind to `127.0.0.1` only and are reached through SSH tunnels. The applications themselves are documented in [homelab](https://github.com/cre-scen/homelab).
+
+## Verify it yourself
+
+On the box:
+
+```bash
+sudo bash scripts/verify-hardening.sh
+```
+
+It is read-only and changes nothing. It checks the firmware, the SSH settings, the firewall rules, what is listening on the network and CUPS, and exits non-zero if anything has drifted. Override the allowed networks with `sudo ALLOWED_NETS="10.0.0.0/24" bash scripts/verify-hardening.sh`.
 
 ## Challenges and lessons learned
 
@@ -69,14 +83,17 @@ I installed Docker (`docker.io`) to run intentionally vulnerable applications. T
 | The keyboard ribbon connector's locking latch (J9) came off during disassembly | The built-in keyboard is out of service and I use a USB keyboard. Lesson: release ZIF latches with a spudger before handling ribbons. |
 | Conflicting compatibility information online | Verify against the maintainer's current documentation, not secondary wikis. |
 | Several irreversible steps (firmware flash, disk erase) | Verify before each one: a firmware backup in two locations, a checksum-verified ISO and a confirmed target disk. |
+| My first evidence capture showed root could still log in with a key, SSH was open to any source, and an unused printing service was running | Fixed all three and recorded the before/after state. Lesson: "hardened" needs checking against the live system, not assuming. |
+| After restricting SSH to `192.168.100.0/24`, new connections timed out: the box had moved to the second router's `192.168.0.0/24` network | I had kept the existing SSH session open, so I could diagnose from inside (`$SSH_CLIENT`, `hostname -I`) and add the right subnet without physical access. Lesson: never close your only session while changing firewall or SSH rules; and a DHCP reservation prevents the address moving. |
 
 ## Skills demonstrated
 
 - Hardware disassembly and firmware write-protect bypass on owned hardware
 - Firmware backup, recovery planning and UEFI flashing
 - Linux installation, hardware driver validation and post-install hardening
-- SSH key management and host firewall configuration
-- Risk management for irreversible operations
+- SSH key management, host firewall configuration and attack-surface reduction
+- Verifying security controls with evidence and a repeatable check script
+- Risk management for irreversible operations and remote changes
 
 ## Status
 
@@ -84,8 +101,10 @@ I installed Docker (`docker.io`) to run intentionally vulnerable applications. T
 | :--- | :--- |
 | UEFI firmware | Complete |
 | Xubuntu install and updates | Complete |
-| SSH hardening and firewall | Complete |
-| Docker lab services | In progress |
-| DHCP reservation | Planned |
+| SSH hardening and firewall | Complete, verified ([evidence](docs/evidence.md)) |
+| Docker installed | Complete; vulnerable apps run under [homelab](https://github.com/cre-scen/homelab) |
+| DHCP reservation | Next: reserve the address on the `192.168.0.1` Wi-Fi router |
 
-<!-- TODO before public: add screenshots (write-protect status, firmware utility menu, backup file listing, fastfetch on Xubuntu) to an images/ folder and link them in the relevant steps -->
+## License
+
+[MIT](LICENSE)
