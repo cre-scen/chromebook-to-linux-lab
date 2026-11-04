@@ -9,8 +9,12 @@ if [[ $EUID -ne 0 ]]; then
     exit 2
 fi
 
-# Networks allowed to reach SSH. Override, e.g.: sudo ALLOWED_NETS="10.0.0.0/24" bash scripts/verify-hardening.sh
-ALLOWED_NETS=${ALLOWED_NETS:-"192.168.0.0/24 192.168.100.0/24"}
+# Who may reach what. Override, e.g.: sudo SSH_SOURCES="10.0.0.5" bash scripts/verify-hardening.sh
+# SSH: the admin laptop only (reserved in the router). API: the SecureVault lab API
+# (SecureVault_Suite M3b) from the lab subnet. Set API_PORT="" if the API isn't deployed.
+SSH_SOURCES=${SSH_SOURCES:-"192.168.0.101"}
+API_PORT=${API_PORT-5000}
+API_SOURCES=${API_SOURCES:-"192.168.0.0/24"}
 
 fails=0
 pass() { printf '  [PASS] %s\n' "$1"; }
@@ -39,26 +43,40 @@ ufw_out=$(ufw status verbose 2>/dev/null)
 check "ufw active"                     grep -q '^Status: active' <<<"$ufw_out"
 check "Default deny incoming"          grep -q 'deny (incoming)' <<<"$ufw_out"
 # shellcheck disable=SC2016  # single quotes intended: expanded by the inner bash
-check "No SSH rule open to Anywhere"   bash -c '! grep -Eq "^22/tcp.*ALLOW IN +Anywhere" <<<"$1"' _ "$ufw_out"
-# Every ALLOW IN rule must be SSH from one of the allowed networks
+# shellcheck disable=SC2016  # single quotes intended: expanded by the inner bash
+check "No rule open to Anywhere"       bash -c '! grep -Eq "ALLOW IN +Anywhere" <<<"$1"' _ "$ufw_out"
+# allowed_rule PORT SOURCE: true if `line` is exactly "PORT/tcp ALLOW IN SOURCE" (+ optional comment)
+allowed_rule() { [[ $line =~ ^$1/tcp[[:space:]]+ALLOW\ IN[[:space:]]+${2//./\\.}([[:space:]]|$) ]]; }
+# Every ALLOW IN rule must be SSH from an admin source, or the API from the lab subnet
 unexpected=$(grep 'ALLOW IN' <<<"$ufw_out" | while read -r line; do
     ok=0
-    for net in $ALLOWED_NETS; do
-        [[ $line =~ ^22/tcp[[:space:]]+ALLOW\ IN[[:space:]]+${net//./\\.}([[:space:]]|$) ]] && ok=1
-    done
+    for src in $SSH_SOURCES; do allowed_rule 22 "$src" && ok=1; done
+    if [[ -n $API_PORT ]]; then
+        for src in $API_SOURCES; do allowed_rule "$API_PORT" "$src" && ok=1; done
+    fi
     [[ $ok -eq 0 ]] && echo "$line"
 done)
 if [[ -z $unexpected ]]; then
-    pass "Only SSH from $ALLOWED_NETS is allowed in"
+    pass "Only SSH from $SSH_SOURCES${API_PORT:+ and port $API_PORT from $API_SOURCES} allowed in"
 else
     fail "Unexpected inbound rules: $(tr '\n' ';' <<<"$unexpected")"
 fi
+# Without this, a missing SSH rule would pass the check above and lock the admin out
+line_has_ssh=$(grep 'ALLOW IN' <<<"$ufw_out" | while read -r line; do
+    for src in $SSH_SOURCES; do allowed_rule 22 "$src" && echo yes; done
+done)
+check "SSH allowed from the admin source" test -n "$line_has_ssh"
+# shellcheck disable=SC2016  # single quotes intended: expanded by the inner bash
+check "nftables.service not enabled (its flush ruleset would wipe ufw)" \
+    bash -c '[[ $(systemctl is-enabled nftables.service 2>/dev/null) != enabled ]]'
 
 echo "== Exposed services"
-# Anything listening on a non-loopback address other than SSH is a finding
-exposed=$(ss -tlnH | awk '{print $4}' | grep -Ev '^(127\.|\[::1\]|::1)' | grep -Ev ':22$' || true)
+# Anything listening on a non-loopback address other than SSH (and the API port, which
+# ufw limits to the lab subnet) is a finding. The API only listens while it is running.
+allowed_ports=":22${API_PORT:+|:$API_PORT}"
+exposed=$(ss -tlnH | awk '{print $4}' | grep -Ev '^(127\.|\[::1\]|::1)' | grep -Ev "(${allowed_ports})\$" || true)
 if [[ -z $exposed ]]; then
-    pass "Only SSH listens on non-loopback addresses"
+    pass "Only SSH${API_PORT:+ and port $API_PORT} listen on non-loopback addresses"
 else
     fail "Also listening beyond localhost: $(tr '\n' ' ' <<<"$exposed")"
 fi

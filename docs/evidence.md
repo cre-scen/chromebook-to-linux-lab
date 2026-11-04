@@ -103,6 +103,29 @@ masked
 
 All three units are masked, because `cups.socket` and `cups.path` can re-activate `cups.service` on their own.
 
+## Update 2026-11-04: SecureVault M3b firewall
+
+The firewall above was narrowed later the same day for [SecureVault_Suite M3b](https://github.com/cre-scen/SecureVault_Suite/blob/main/docs/m3b-firewall-evidence.md). The output above is kept as the state at hardening time.
+
+```
+$ sudo ufw status
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       192.168.0.101              # SSH: admin laptop
+5000/tcp                   ALLOW       192.168.0.0/24             # SecureVault API (lab)
+```
+
+- SSH now comes from the admin laptop only. Its address is reserved in the router (IP-MAC binding to the Wi-Fi adapter), because this rule would lock out any other address.
+- `5000/tcp` is the SecureVault API, open to the lab subnet. It listens on `192.168.0.103:5000` only while the API runs.
+- A separate nftables table (`inet securevault`, loaded by `securevault-firewall.service`) drops IPs that LogSentinel bans, before ufw sees them. `nftables.service` stays disabled, because its `flush ruleset` would wipe ufw.
+- nmap from a Kali VM on the LAN: before, `22/tcp open`; after, `5000/tcp open` only.
+
 ## verify-hardening.sh
 
 The script was tested by replaying the exact outputs above through stub commands. It passes all 11 checks on the "after" state. On the "before" state it fails 4: root login, the SSH rule open to `Anywhere` (counted twice), and CUPS.
+
+Updated for M3b (2026-11-04): it now expects SSH from `SSH_SOURCES` (default `192.168.0.101`) and the API port from `API_SOURCES` (default `192.168.0.0/24`), fails if no SSH rule exists for the admin (the lockout case), fails on any rule open to `Anywhere`, and fails if `nftables.service` is enabled. Replayed through stubs, it passes all 13 checks on the M3b state above, and the earlier two-subnet SSH rules now fail 2 checks, as intended.
+
+Run on the live box 2026-11-04 (firmware `MrChromebox-2609.2`, SecureVault API running): all 13 checks passed, exit 0.
