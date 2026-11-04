@@ -57,7 +57,7 @@ I ran **Backup Current Firmware** first, verified the file, then ran **Install/U
 | Control | Implementation |
 | :--- | :--- |
 | Host firewall | `ufw`, default deny inbound; SSH allowed only from the two home LAN subnets |
-| Authentication | OpenSSH with **ed25519** keys only |
+| Authentication | OpenSSH with **ed25519** keys only; the private key is passphrase-protected |
 | Password login | Disabled (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`). A forced password attempt gets `Permission denied (publickey)` |
 | Root login | Disabled (`PermitRootLogin no`, in a drop-in under `sshd_config.d/`) |
 | Unneeded services | CUPS (printing) stopped and masked. Only SSH listens beyond localhost |
@@ -103,7 +103,7 @@ It is read-only and changes nothing. It checks the firmware, the SSH settings, t
 | Xubuntu install and updates | Complete |
 | SSH hardening and firewall | Complete, verified ([evidence](docs/evidence.md)) |
 | Docker installed | Complete; vulnerable apps run under [homelab](https://github.com/cre-scen/homelab) |
-| DHCP reservation | Next: reserve the address on the `192.168.0.1` Wi-Fi router |
+| DHCP reservation | Complete: IP-MAC binding on the Tenda Wi-Fi router, so the box always gets the same address |
 
 ## License
 
